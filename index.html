@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Food-Sharing Network — Single File</title>
+
+<!-- External libs (optional CDN) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  :root{
+    --bg:#fff7fb; --card:#fff1f6; --text:#3b0f2f; --muted:#7b3b56;
+    --accent:#ff6fa3; --accent-2:#ffb0d6; --border:rgba(203,87,135,0.12);
+    --glass: rgba(255,255,255,0.6);
+  }
+  [data-theme="dark"]{
+    --bg:#0f0710; --card:#1a0f17; --text:#ffdfe9; --muted:#f7cfe0;
+    --accent:#ff7bb4; --accent-2:#ff99c8; --border:rgba(255,255,255,0.06);
+    --glass: rgba(255,255,255,0.03);
+  }
+
+  *{box-sizing:border-box;font-family:Inter,system-ui,Arial,sans-serif}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text)}
+  header{position:sticky;top:0;z-index:30;background:linear-gradient(180deg,var(--glass),transparent);backdrop-filter:blur(6px);
+    display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white;display:flex;align-items:center;justify-content:center;font-weight:800}
+  nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .btn{padding:8px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);text-decoration:none;cursor:pointer}
+  .btn.cta{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white;border:none}
+  .toggle{padding:6px 8px;border-radius:999px;background:var(--glass);border:1px solid var(--border);cursor:pointer}
+
+  main{max-width:1100px;margin:20px auto;padding:16px}
+  .hero{display:grid;grid-template-columns:1fr 380px;gap:18px;align-items:start}
+  .card{background:var(--card);padding:14px;border-radius:12px;border:1px solid var(--border);box-shadow:0 8px 24px rgba(203,87,135,0.06)}
+  .small{color:var(--muted);font-size:0.92rem}
+  .grid-2{display:grid;grid-template-columns:1fr 340px;gap:14px;margin-top:12px}
+  .form-row{display:flex;gap:8px}
+  input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text)}
+  label{font-size:0.85rem;color:var(--muted)}
+  .list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .list-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.35),transparent)}
+  footer{margin-top:30px;text-align:center;color:var(--muted);padding:18px}
+
+  /* map */
+  #map{height:220px;border-radius:10px;border:1px solid var(--border);overflow:hidden}
+
+  /* toast */
+  .toast-wrap{position:fixed;right:18px;top:78px;display:flex;flex-direction:column;gap:8px;z-index:60}
+  .toast{padding:10px 14px;border-radius:10px;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:white;box-shadow:0 6px 18px rgba(0,0,0,0.12)}
+
+  @media (max-width:980px){.hero{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">FS</div>
+    <div>
+      <div style="font-weight:700">Food-Sharing Network</div>
+      <div class="small">Share food. Change lives.</div>
+    </div>
+  </div>
+
+  <nav>
+    <a class="btn" href="#/">Home</a>
+    <a class="btn" href="#/donor">Donor</a>
+    <a class="btn" href="#/recipient">Recipient</a>
+    <a class="btn" href="#/partners">Partners</a>
+    <button class="btn cta" onclick="navigate('#/donor')">Join Network</button>
+    <button class="toggle" id="themeToggle" title="Toggle theme">🌙</button>
+  </nav>
+</header>
+
+<main id="app">
+  <!-- views rendered by JS -->
+</main>
+
+<footer>
+  Food-Sharing Network — Dept. of Computer Science & Business Systems, BMSITM · © <span id="year"></span>
+</footer>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<script>
+/* -------------------------
+   Small single-file SPA
+   - Hash-based pages: /, /donor, /recipient, /partners
+   - localStorage 'fs_listings' used to persist donor listings
+   - simple matching demo and toasts
+   - includes Leaflet map & Chart.js usage (CDNs above)
+   --------------------------*/
+
+const YEAR = new Date().getFullYear(); document.getElementById('year').innerText = YEAR;
+const app = document.getElementById('app');
+
+function toast(msg, t=3500){
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div'); el.className='toast'; el.innerText = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>{ el.style.opacity=0; el.style.transform='translateX(18px)'; }, t-600);
+  setTimeout(()=>el.remove(), t);
+}
+
+// Theme toggle: remembers in localStorage
+const themeToggle = document.getElementById('themeToggle');
+if(localStorage.getItem('fs_theme')==='dark'){ document.documentElement.setAttribute('data-theme','dark'); themeToggle.innerText='☀️'; }
+themeToggle.addEventListener('click', ()=>{
+  if(document.documentElement.getAttribute('data-theme')){ document.documentElement.removeAttribute('data-theme'); localStorage.setItem('fs_theme','light'); themeToggle.innerText='🌙' }
+  else { document.documentElement.setAttribute('data-theme','dark'); localStorage.setItem('fs_theme','dark'); themeToggle.innerText='☀️' }
+});
+
+// storage helpers
+function readListings(){ try{ return JSON.parse(localStorage.getItem('fs_listings')||'[]') }catch(e){ return [] } }
+function writeListings(ls){ localStorage.setItem('fs_listings', JSON.stringify(ls)) }
+
+// hash routing
+function navigate(hash){ location.hash = hash; }
+window.addEventListener('hashchange', render);
+window.addEventListener('load', render);
+
+function render(){
+  const hash = location.hash.replace('#','') || '/';
+  if(hash.startsWith('/donor')) return renderDonor();
+  if(hash.startsWith('/recipient')) return renderRecipient();
+  if(hash.startsWith('/partners')) return renderPartners();
+  return renderHome();
+}
+
+/* ---------------- HOME ---------------- */
+function renderHome(){
+  const listings = readListings();
+  app.innerHTML = `
+  <section class="hero">
+    <div>
+      <div class="card">
+        <h1 style="margin:0 0 8px">Food-Sharing Network</h1>
+        <p class="small" style="margin:0 0 12px">A platform to connect surplus food donors with food-insecure families and coordinate safe distribution.</p>
+        <div style="display:flex;gap:10px">
+          <button class="btn cta" onclick="navigate('#/donor')">Share Food Now</button>
+          <button class="btn" onclick="navigate('#/recipient')">Request Food</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin:0 0 8px">How it works</h3>
+        <ol class="small" style="margin:0;padding-left:18px">
+          <li>Donor lists surplus food (type, qty, location).</li>
+          <li>Platform matches nearby recipients and notifies partners.</li>
+          <li>Volunteers/NGOs pick up & distribute safely.</li>
+        </ol>
+      </div>
+    </div>
+
+    <aside>
+      <div class="card">
+        <h3 style="margin-top:0">Impact Preview</h3>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <div style="flex:1;text-align:center;padding:10px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.4),transparent)"><strong>3,620</strong><div class="small">Meals</div></div>
+          <div style="flex:1;text-align:center;padding:10px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.4),transparent)"><strong>34%</strong><div class="small">Waste reduced</div></div>
+        </div>
+
+        <h4 style="margin:12px 0 6px">Active Listings</h4>
+        <div class="list" id="homeListings">
+          ${listings.length? listings.slice().reverse().map((l,i)=>`<div class="list-item"><div><strong>${escapeHtml(l.name)}</strong><div class="small">${escapeHtml(l.type)} — ${l.qty} meals</div></div><div style="text-align:right"><div class="small">${escapeHtml(l.lat||'')}, ${escapeHtml(l.lon||'')}</div><div style="margin-top:8px"><button class="btn" onclick="requestListing(${i})">Request</button></div></div></div>`).join('') : `<div class="small">No active listings yet.</div>`}
+        </div>
+      </div>
+
+      <div style="margin-top:12px" class="card">
+        <h4 style="margin:0 0 6px">Map Preview</h4>
+        <div id="map" style="height:180px;border-radius:8px"></div>
+      </div>
+    </aside>
+  </section>
+
+  <section style="margin-top:12px" class="card">
+    <h3 style="margin-top:0">Call to Action</h3>
+    <p class="small">Join Our Network. Get involved. Share food. Change lives.</p>
+  </section>
+  `;
+
+  // init map and markers
+  setTimeout(()=>{ try {
+    const map = L.map('map', {center:[12.9716,77.5946], zoom:12, zoomControl:false});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+    const list = readListings();
+    list.forEach(l => {
+      if(l.lat && l.lon){
+        const mk = L.marker([Number(l.lat), Number(l.lon)]).addTo(map).bindPopup(`<b>${escapeHtml(l.name)}</b><div class="small">${escapeHtml(l.type)} — ${l.qty} meals</div>`);
+      }
+    });
+  } catch(e){ console.warn(e); } }, 100);
+
+  // render chart (small)
+  renderImpactChart();
+}
+
+/* ---------------- DONOR ---------------- */
+function renderDonor(){
+  app.innerHTML = `
+  <div class="card">
+    <h2 style="margin:0 0 8px">Donor Portal — List Surplus Food</h2>
+    <p class="small" style="margin:0 0 12px">List what you have quickly — volunteers will be notified in the demo.</p>
+
+    <form id="donorForm">
+      <label>Donor Name</label><input name="name" placeholder="Restaurant / Household" required>
+      <label style="margin-top:8px">Food Type</label>
+      <select name="type"><option>Prepared Meal</option><option>Bakery</option><option>Vegetables</option><option>Dairy</option><option>Fruits</option><option>Meat</option></select>
+      <label style="margin-top:8px">Quantity (approx. meals)</label><input name="qty" type="number" min="1" value="10" required>
+      <label style="margin-top:8px">Location Coordinates (lat, lon)</label>
+      <div class="form-row"><input name="lat" placeholder="12.9716" required><input name="lon" placeholder="77.5946" required></div>
+      <label style="margin-top:8px">Notes</label><textarea name="notes" rows="2"></textarea>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn cta" type="submit">List Food</button><button class="btn" type="button" onclick="autoDemo()">Auto Demo</button></div>
+    </form>
+  </div>
+
+  <div style="margin-top:12px" class="card">
+    <h4 style="margin:0 0 6px">Food Safety</h4>
+    <ul class="small">
+      <li>Keep hot food >60°C or cold food <5°C while holding.</li>
+      <li>Seal packages and label allergens and time.</li>
+      <li>Partners re-check and approve before distribution.</li>
+    </ul>
+  </div>
+  `;
+
+  const form = document.getElementById('donorForm');
+  form.addEventListener('submit', e=>{
+    e.preventDefault();
+    const fd = new FormData(form);
+    const entry = {
+      name: fd.get('name').trim(),
+      type: fd.get('type'),
+      qty: Number(fd.get('qty'))||1,
+      lat: fd.get('lat').trim(),
+      lon: fd.get('lon').trim(),
+      notes: fd.get('notes').trim(),
+      ts: Date.now()
+    };
+    const list = readListings(); list.push(entry); writeListings(list);
+    toast('Donation listed — matching in progress (demo).');
+    form.reset();
+    setTimeout(()=>navigate('#/'), 700);
+  });
+}
+
+function autoDemo(){
+  const demo = {name:'Cafe Sunrise', type:'Prepared Meal', qty:40, lat:'12.9752', lon:'77.6046', notes:'Sealed containers', ts:Date.now()};
+  const list = readListings(); list.push(demo); writeListings(list);
+  toast('Demo listing created: Cafe Sunrise (40 meals)');
+  setTimeout(()=>navigate('#/'),600);
+}
+
+/* ---------------- RECIPIENT ---------------- */
+function renderRecipient(){
+  app.innerHTML = `
+  <div class="card">
+    <h2 style="margin:0 0 8px">Recipient Portal — Find Food</h2>
+    <p class="small" style="margin:0 0 12px">Enter your details and location to find nearby available food (demo).</p>
+
+    <form id="recipientForm">
+      <label>Name</label><input name="name" required>
+      <label style="margin-top:8px">Contact (phone/email)</label><input name="contact" required>
+      <label style="margin-top:8px">Household Size</label><input name="size" type="number" min="1" value="4" required>
+      <label style="margin-top:8px">Dietary Needs</label>
+      <select name="diet"><option>None</option><option>Vegetarian</option><option>No dairy</option><option>No meat</option></select>
+      <label style="margin-top:8px">Location Coordinates (lat, lon)</label>
+      <div class="form-row"><input name="lat" placeholder="12.9731" required><input name="lon" placeholder="77.5913" required></div>
+      <div style="margin-top:10px;display:flex;gap:8px"><button class="btn cta" type="submit">Find Matches</button><button class="btn" type="button" onclick="prefillRecipient()">Auto Fill</button></div>
+    </form>
+  </div>
+
+  <div style="margin-top:12px" class="card">
+    <h4 style="margin:0 0 6px">Nearby Matches</h4>
+    <div id="recipientMatches" class="list small"></div>
+  </div>
+  `;
+
+  const form = document.getElementById('recipientForm');
+  form.addEventListener('submit', e=>{
+    e.preventDefault();
+    const fd = new FormData(form);
+    const req = {
+      name: fd.get('name').trim(),
+      contact: fd.get('contact').trim(),
+      size: Number(fd.get('size'))||1,
+      diet: fd.get('diet'),
+      lat: Number(fd.get('lat')),
+      lon: Number(fd.get('lon')),
+      ts: Date.now()
+    };
+    const matches = findMatchesForRecipient(req);
+    renderRecipientMatches(matches, req);
+    if(matches.length) toast(`Found ${matches.length} match(es) nearby.`);
+    else toast('No matches found nearby — we will alert when a match appears.');
+  });
+}
+
+function prefillRecipient(){
+  const f = document.querySelector('#recipientForm');
+  if(!f) return;
+  f.name.value = 'Family Rao'; f.contact.value='9876543210'; f.size.value=5; f.diet.value='None'; f.lat.value='12.9731'; f.lon.value='77.5913';
+  toast('Recipient demo prefilled. Click Find Matches.');
+}
+
+function renderRecipientMatches(matches, req){
+  const container = document.getElementById('recipientMatches');
+  if(!container) return;
+  if(matches.length===0){ container.innerHTML = '<div class="small">No matches nearby.</div>'; return; }
+  container.innerHTML = '';
+  matches.forEach((m, i) => {
+    const d = haversine(req.lat, req.lon, Number(m.lat), Number(m.lon));
+    const el = document.createElement('div'); el.className='list-item';
+    el.innerHTML = `<div><strong>${escapeHtml(m.name)}</strong><div class="small">${escapeHtml(m.type)} — ${m.qty} meals • ${d.toFixed(1)} km</div></div>
+      <div style="text-align:right"><button class="btn" onclick="claimListing(${i}, ${req.lat}, ${req.lon})">Request</button></div>`;
+    container.appendChild(el);
+  });
+}
+
+/* ---------------- PARTNERS ---------------- */
+function renderPartners(){
+  const listings = readListings();
+  app.innerHTML = `
+  <div class="card">
+    <h2 style="margin:0 0 8px">Partners & Volunteers</h2>
+    <p class="small" style="margin:0 0 12px">Coordinate pickups and track assignments (demo).</p>
+    <h4 style="margin:8px 0">Active Listings</h4>
+    <div id="partnersListings" class="list">${listings.length? listings.slice().reverse().map(l=>`<div class="list-item"><div><strong>${escapeHtml(l.name)}</strong><div class="small">${escapeHtml(l.type)} — ${l.qty} meals</div></div><div><div class="small">${escapeHtml(l.lat)}, ${escapeHtml(l.lon)}</div></div></div>`).join('') : `<div class="small">No active listings.</div>`}</div>
+  </div>
+
+  <div style="margin-top:12px" class="card">
+    <h4 style="margin:0 0 8px">Resources</h4>
+    <ul class="small"><li>Food Banks</li><li>Community Kitchens</li><li>Health Organizations</li><li>Schools & Universities</li></ul>
+  </div>
+  `;
+}
+
+/* ---------------- Utilities & Matching ---------------- */
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Haversine distance (km)
+function haversine(lat1,lon1,lat2,lon2){
+  const toRad = v => v*Math.PI/180;
+  const R = 6371;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+// find matches for recipient (type compatibility + distance <= 8km)
+function findMatchesForRecipient(rec){
+  const list = readListings();
+  const matches = list.filter(l=>{
+    if(!l.lat || !l.lon) return false;
+    if(rec.diet==='Vegetarian' && l.type.toLowerCase().includes('meat')) return false;
+    if(rec.diet==='No meat' && l.type.toLowerCase().includes('meat')) return false;
+    const d = haversine(rec.lat, rec.lon, Number(l.lat), Number(l.lon));
+    l._dist = d;
+    return d <= 8;
+  }).sort((a,b)=>a._dist - b._dist || b.qty - a.qty);
+  return matches.slice(0,6);
+}
+
+// user requests a listing (from Home list — uses reversed index)
+function requestListing(reversedIndex){
+  const list = readListings();
+  const idx = list.length - 1 - reversedIndex;
+  const l = list[idx];
+  if(!l){ toast('Listing not found'); return; }
+  toast(`Request sent for ${l.type} at ${l.name}. Partner verifying pickup...`);
+  // simulate partner confirm
+  setTimeout(()=>toast('Partner confirmed pickup — volunteer en route.'), 1600);
+}
+
+/* Claim listing from recipient matches (index in filtered list) */
+function claimListing(matchIndex, rcLat, rcLon){
+  // find matches again using provided rc coords (simple)
+  const mockReq = {lat: rcLat, lon: rcLon, diet:'None', size:1};
+  const matches = findMatchesForRecipient(mockReq);
+  const m = matches[matchIndex];
+  if(!m){ toast('Match not available'); return; }
+  toast(`Request created for ${m.type} at ${m.name}. Assigned volunteer (demo).`);
+  // demo: record assignment log in localStorage (optional)
+  const assignments = JSON.parse(localStorage.getItem('fs_assignments')||'[]');
+  assignments.push({listing:m,ts:Date.now(),volunteer:'Volunteer A'});
+  localStorage.setItem('fs_assignments', JSON.stringify(assignments));
+}
+
+/* ---------------- Impact Chart ---------------- */
+function renderImpactChart(){
+  // small projected families chart
+  const chartHolder = document.createElement('canvas'); chartHolder.style.width='100%'; chartHolder.style.height='120px';
+  // attach to aside if exists
+  const aside = document.querySelector('aside .card');
+  if(!aside) return;
+  if(aside.querySelector('canvas')) return;
+  aside.appendChild(chartHolder);
+  try{
+    new Chart(chartHolder.getContext('2d'), {
+      type:'line',
+      data:{ labels:['M1','M2','M3','M4','M5','M6'], datasets:[{ label:'Projected families reached', data:[200,550,980,1700,2900,5200], tension:0.35, borderColor: 'rgba(255,111,163,0.95)', backgroundColor:'rgba(255,111,163,0.12)', fill:true, pointRadius:3 }]},
+      options:{ plugins:{legend:{display:false}}, responsive:true, scales:{ y:{beginAtZero:true} } }
+    });
+  }catch(e){ /* chart lib not available */ }
+}
+
+/* ---------------- Initial seed (if empty) ---------------- */
+(function seed(){
+  if(!localStorage.getItem('fs_listings')){
+    const seed = [
+      {name:'Baker Street', type:'Bakery', qty:30, lat:'12.9722', lon:'77.5950', notes:'Bread packed', ts:Date.now()},
+      {name:'Green Grocer', type:'Vegetables', qty:60, lat:'12.9655', lon:'77.6100', notes:'Fresh produce', ts:Date.now()},
+      {name:'Hotel Maple', type:'Prepared Meal', qty:80, lat:'12.9820', lon:'77.5780', notes:'Sealed trays', ts:Date.now()}
+    ];
+    localStorage.setItem('fs_listings', JSON.stringify(seed));
+  }
+})();
+
+/* render on first load */
+render();
+</script>
+
+</body>
+</html>
